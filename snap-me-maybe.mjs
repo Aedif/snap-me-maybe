@@ -1,3 +1,5 @@
+import { patchPIXI } from './Point.js';
+
 const MODULE_ID = 'aedifs-snap-me-maybe';
 const settings = { shape: 'rectangle', sticky: true, debug: false };
 
@@ -42,6 +44,8 @@ Hooks.on('init', () => {
     },
   });
   settings.debug = game.settings.get(MODULE_ID, 'debug');
+
+  patchPIXI();
 });
 
 Hooks.on('preUpdateToken', (tokenDoc, change, options, userId) => {
