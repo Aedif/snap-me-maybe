@@ -6,6 +6,8 @@
 
 Foundry VTT module that snaps tokens to each other on gridless scenes instead of overlapping them.
 
+`Shift` key can be held during token drag/move to temporarily disable snapping.
+
 ## Settings
 
 ### Token Shape
