@@ -1,5 +1,5 @@
 const MODULE_ID = 'aedifs-snap-me-maybe';
-const settings = { shape: 'rectangle', sticky: true };
+const settings = { shape: 'rectangle', sticky: true, debug: false };
 
 Hooks.on('init', () => {
   game.settings.register(MODULE_ID, 'shape', {
@@ -29,6 +29,19 @@ Hooks.on('init', () => {
     },
   });
   settings.sticky = game.settings.get(MODULE_ID, 'sticky');
+
+  game.settings.register(MODULE_ID, 'debug', {
+    name: game.i18n.localize(`${MODULE_ID}.settings.debug.name`),
+    hint: game.i18n.localize(`${MODULE_ID}.settings.debug.hint`),
+    config: true,
+    type: Boolean,
+    default: settings.debug,
+    onChange: (val) => {
+      settings.debug = val;
+      canvas.controls.debug.clear();
+    },
+  });
+  settings.debug = game.settings.get(MODULE_ID, 'debug');
 });
 
 Hooks.on('preUpdateToken', (tokenDoc, change, options, userId) => {
@@ -63,6 +76,20 @@ Hooks.on('preUpdateToken', (tokenDoc, change, options, userId) => {
 class Snapper {
   static _fallbackVector;
 
+  static _debugShapes(shapes) {
+    const dg = canvas.controls.debug;
+    dg.clear();
+    dg.lineStyle(1, 0x00ff00, 1);
+
+    for (const shape of shapes) {
+      if (shape instanceof PIXI.Rectangle) {
+        dg.drawRect(shape.x, shape.y, shape.width, shape.height);
+      } else {
+        dg.drawEllipse(shape.center.x, shape.center.y, shape.radius, shape.radius);
+      }
+    }
+  }
+
   /**
    * Snaps the provided rectangle to token in case of overlap.
    * @param {Pixi.Rectangle} rect    Rectangle representing new token position
@@ -72,7 +99,7 @@ class Snapper {
    * @param {String} options.sticky  If true right-angle moves will stick to tokens
    * @returns {Object}               x/y coordinates of the snapped rectangle
    */
-  static snap(rect, token, { shape = 'rectangle', sticky = false } = {}) {
+  static snap(rect, token, { shape = 'rectangle', sticky = true, debug = false } = {}) {
     // Used during exact center to center overlaps
     this._fallbackVector = new PIXI.Point(token.center.x, token.center.y)
       .subtract(new PIXI.Point(rect.center.x, rect.center.y))
@@ -114,6 +141,8 @@ class Snapper {
       hit = false;
       steps++;
     }
+
+    if (debug) this._debugShapes(shapes.concat(movedTokenShape));
 
     // Get token x/y from primitive
     if (shape === 'rectangle') {

@@ -8,6 +8,10 @@
       "sticky": {
         "name": "Sticky Keys",
         "hint": "When enabled movement using the keyboard keys will result in colliding tokens sticking to each other instead of glancing or bouncing off."
+      },
+      "debug": {
+        "name": "Debug",
+        "hint": "Show token shape outlines."
       }
     },
     "keybindings": {
