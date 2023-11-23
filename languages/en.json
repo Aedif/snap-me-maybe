@@ -1,0 +1,24 @@
+{
+  "aedifs-snap-me-maybe": {
+    "settings": {
+      "shape": {
+        "name": "Token Shape",
+        "hint": "What shape the token should be considered as when snapping."
+      },
+      "sticky": {
+        "name": "Sticky Keys",
+        "hint": "When enabled movement using the keyboard keys will result in colliding tokens sticking to each other instead of glancing or bouncing off."
+      }
+    },
+    "keybindings": {
+      "tmp": {
+        "name": "Toggle Grid on Current Layer (Global)",
+        "hint": "Short Press will toggle the layer globally, a long press will toggle the layer just for the current Scene."
+      }
+    },
+    "common": {
+      "rectangle": "Rectangle",
+      "circle": "Circle"
+    }
+  }
+}
