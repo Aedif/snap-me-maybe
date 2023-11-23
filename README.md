@@ -8,6 +8,8 @@ Foundry VTT module that snaps tokens to each other on gridless scenes instead of
 
 `Shift` key can be held during token drag/move to temporarily disable snapping.
 
+https://github.com/Aedif/snap-me-maybe/assets/7693704/4c568336-a45d-4f18-9092-46b21fdc6f48
+
 ## Settings
 
 ### Token Shape
