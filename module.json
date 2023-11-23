@@ -3,9 +3,9 @@
   "title": "Snap Me Maybe",
   "description": "Snap overlapping tokens together on gridless scenes.",
   "version": "1.0.0.",
-  "download": "https://github.com/Aedif/snap-me-maybe/releases/download/1.1.0/aedifs-snap-me-maybe.zip",
+  "download": "https://github.com/Aedif/snap-me-maybe/releases/download/1.0.0/aedifs-snap-me-maybe.zip",
   "url": "https://github.com/Aedif/snap-me-maybe",
-  "manifest": "https://github.com/Aedif/snap-me-maybe/releases/download/1.1.0/module.json",
+  "manifest": "https://github.com/Aedif/snap-me-maybe/releases/download/1.0.0/module.json",
   "author": "Aedif",
   "authors": [
     {
