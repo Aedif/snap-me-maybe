@@ -131,7 +131,9 @@ class Snapper {
 
     // We'll be treating each token as a primitive shape so lets transform them here to
     // not need to keep repeating it during each iteration
-    const shapes = canvas.tokens.placeables.filter((t) => t.id !== token.id).map(tokenToShape);
+    const shapes = canvas.tokens.placeables
+      .filter((t) => t.id !== token.id && t.visible)
+      .map(tokenToShape);
 
     const maxSteps = 5000;
     let steps = 0;
