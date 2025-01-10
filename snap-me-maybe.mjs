@@ -65,16 +65,16 @@ Hooks.on('preUpdateToken', (tokenDoc, change, options, userId) => {
   const rect = new PIXI.Rectangle(
     x ?? tokenDoc.x,
     y ?? tokenDoc.y,
-    (width ?? tokenDoc.width) * canvas.grid.w,
-    (height ?? tokenDoc.height) * canvas.grid.h
+    (width ?? tokenDoc.width) * (canvas.grid.sizeX ?? canvas.grid.w), // v12
+    (height ?? tokenDoc.height) * (canvas.grid.sizeY ?? canvas.grid.h) // v12
   );
 
   // Snap simulated shape
   const snappedCoords = Snapper.snap(rect, tokenDoc.object, settings);
   if (snappedCoords.x === rect.x && snappedCoords.y === rect.y) return;
 
-  const collision = tokenDoc.object.checkCollision(snappedCoords, {});
-  if (!collision) mergeObject(change, snappedCoords);
+  const collision = tokenDoc.object.checkCollision(tokenDoc.object.getCenterPoint(snappedCoords));
+  if (!collision) foundry.utils.mergeObject(change, snappedCoords);
 });
 
 class Snapper {
@@ -110,8 +110,7 @@ class Snapper {
       .normalize();
 
     this._stickyRightAngleMove =
-      sticky &&
-      ((Math.atan2(this._fallbackVector.y, this._fallbackVector.x) * 180) / Math.PI) % 90 === 0;
+      sticky && ((Math.atan2(this._fallbackVector.y, this._fallbackVector.x) * 180) / Math.PI) % 90 === 0;
 
     // Select primitive shapes and functions to be used for hit testing and snapping
     let movedTokenShape, hitTestMove, tokenToShape;
@@ -120,20 +119,14 @@ class Snapper {
       hitTestMove = this._hitTestMoveRectangle.bind(this);
       tokenToShape = this._tokenToRectangle;
     } else {
-      movedTokenShape = new PIXI.Circle(
-        rect.x + rect.width / 2,
-        rect.y + rect.height / 2,
-        rect.width / 2
-      );
+      movedTokenShape = new PIXI.Circle(rect.x + rect.width / 2, rect.y + rect.height / 2, rect.width / 2);
       hitTestMove = this._hitTestMoveCircle.bind(this);
       tokenToShape = this._tokenToCircle;
     }
 
     // We'll be treating each token as a primitive shape so lets transform them here to
     // not need to keep repeating it during each iteration
-    const shapes = canvas.tokens.placeables
-      .filter((t) => t.id !== token.id && t.visible)
-      .map(tokenToShape);
+    const shapes = canvas.tokens.placeables.filter((t) => t.id !== token.id && t.visible).map(tokenToShape);
 
     const maxSteps = 5000;
     let steps = 0;
@@ -165,8 +158,8 @@ class Snapper {
     return new PIXI.Rectangle(
       token.document.x,
       token.document.y,
-      token.document.width * canvas.grid.w,
-      token.document.height * canvas.grid.h
+      token.document.width * (canvas.grid.sizeX ?? canvas.grid.w), // v12
+      token.document.height * (canvas.grid.sizeY ?? canvas.grid.h) // v12
     );
   }
 
@@ -174,7 +167,7 @@ class Snapper {
     const width = token.document.width * canvas.grid.w;
     return new PIXI.Circle(
       token.document.x + width / 2,
-      token.document.y + (token.document.height * canvas.grid.h) / 2,
+      token.document.y + (token.document.height * (canvas.grid.sizeY ?? canvas.grid.h)) / 2, // v12
       width / 2
     );
   }
