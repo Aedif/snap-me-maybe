@@ -73,7 +73,10 @@ Hooks.on('preUpdateToken', (tokenDoc, change, options, userId) => {
   const snappedCoords = Snapper.snap(rect, tokenDoc.object, settings);
   if (snappedCoords.x === rect.x && snappedCoords.y === rect.y) return;
 
-  const collision = tokenDoc.object.checkCollision(tokenDoc.object.getCenterPoint(snappedCoords));
+  const centerPoint = tokenDoc.object.getCenterPoint
+    ? tokenDoc.object.getCenterPoint(snappedCoords)
+    : tokenDoc.object.getCenter(snappedCoords.x, snappedCoords.y);
+  const collision = tokenDoc.object.checkCollision(centerPoint);
   if (!collision) foundry.utils.mergeObject(change, snappedCoords);
 });
 
