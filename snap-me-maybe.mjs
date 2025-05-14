@@ -1,7 +1,7 @@
 import { patchPIXI } from './Point.js';
 
 const MODULE_ID = 'aedifs-snap-me-maybe';
-const settings = { shape: 'rectangle', sticky: true, debug: false };
+const settings = { shape: 'rectangle', sticky: true, debug: false, wallSnap: false };
 
 Hooks.on('init', () => {
   game.settings.register(MODULE_ID, 'shape', {
@@ -31,6 +31,18 @@ Hooks.on('init', () => {
     },
   });
   settings.sticky = game.settings.get(MODULE_ID, 'sticky');
+
+  game.settings.register(MODULE_ID, 'wallSnap', {
+    name: game.i18n.localize(`${MODULE_ID}.settings.wall-snap.name`),
+    hint: game.i18n.localize(`${MODULE_ID}.settings.wall-snap.hint`),
+    config: true,
+    type: Boolean,
+    default: settings.wallSnap,
+    onChange: (val) => {
+      settings.wallSnap = val;
+    },
+  });
+  settings.wallSnap = game.settings.get(MODULE_ID, 'wallSnap');
 
   game.settings.register(MODULE_ID, 'debug', {
     name: game.i18n.localize(`${MODULE_ID}.settings.debug.name`),
@@ -65,20 +77,185 @@ Hooks.on('preUpdateToken', (tokenDoc, change, options, userId) => {
   const rect = new PIXI.Rectangle(
     x ?? tokenDoc.x,
     y ?? tokenDoc.y,
-    (width ?? tokenDoc.width) * (canvas.grid.sizeX ?? canvas.grid.w), // v12
-    (height ?? tokenDoc.height) * (canvas.grid.sizeY ?? canvas.grid.h) // v12
+    (width ?? tokenDoc.width) * canvas.grid.sizeX,
+    (height ?? tokenDoc.height) * canvas.grid.sizeY
   );
 
   // Snap simulated shape
   const snappedCoords = Snapper.snap(rect, tokenDoc.object, settings);
-  if (snappedCoords.x === rect.x && snappedCoords.y === rect.y) return;
+  if (snappedCoords.x === rect.x && snappedCoords.y === rect.y) return true;
 
-  const centerPoint = tokenDoc.object.getCenterPoint
-    ? tokenDoc.object.getCenterPoint(snappedCoords)
-    : tokenDoc.object.getCenter(snappedCoords.x, snappedCoords.y);
-  const collision = tokenDoc.object.checkCollision(centerPoint);
-  if (!collision) foundry.utils.mergeObject(change, snappedCoords);
+  const collision = tokenDoc.object.checkCollision(tokenDoc.object.getCenterPoint(snappedCoords));
+  if (!collision) foundry.utils.mergeObject(change, { x: Math.floor(snappedCoords.x), y: Math.floor(snappedCoords.y) });
 });
+
+class LineShape {
+  isLine = true;
+
+  constructor(wall) {
+    this.A = { x: wall.document.c[0], y: wall.document.c[1] };
+    this.B = { x: wall.document.c[2], y: wall.document.c[3] };
+  }
+
+  getPerpendicularVector(P) {
+    const A = this.A;
+    const B = this.B;
+    const ABx = B.x - A.x;
+    const ABy = B.y - A.y;
+    const APx = P.x - A.x;
+    const APy = P.y - A.y;
+
+    const AB_length_squared = ABx * ABx + ABy * ABy;
+    const t = Math.max(0, Math.min(1, (APx * ABx + APy * ABy) / AB_length_squared));
+
+    const Q = new PIXI.Point(A.x + t * ABx, A.y + t * ABy);
+
+    return new PIXI.Point(P.x - Q.x, P.y - Q.y);
+  }
+
+  draw(graphics) {
+    graphics.moveTo(this.A.x, this.A.y).lineTo(this.B.x, this.B.y);
+  }
+}
+
+class RectangleShape extends PIXI.Rectangle {
+  constructor(token, rectangle) {
+    if (rectangle) {
+      super(rectangle.x, rectangle.y, rectangle.width, rectangle.height);
+    } else {
+      super(
+        token.document.x,
+        token.document.y,
+        token.document.width * canvas.grid.sizeX,
+        token.document.height * canvas.grid.sizeY
+      );
+    }
+  }
+
+  hitTestMove(shape, delta = 0.5) {
+    if (shape.isLine) {
+      return this._hitTestLine(shape, delta);
+    }
+
+    if (this.overlaps(shape)) {
+      const c1 = new PIXI.Point(this.center.x, this.center.y);
+      const c2 = new PIXI.Point(shape.center.x, shape.center.y);
+
+      let vector;
+
+      if (c1.x == c2.x && c1.y === c2.y) {
+        // In case of exact overlap, use _fallbackVector, which points towards original token position
+        if (this._fallbackVector) vector = this._fallbackVector.multiplyScalar(delta);
+        else return false;
+      } else if (this._stickyRightAngleMove) {
+        const intersection = this.intersection(shape);
+        if (intersection.width * intersection.height > 100) {
+          vector = this._fallbackVector.multiplyScalar(delta);
+        } else {
+          vector = c1.subtract(c2).normalize().multiplyScalar(delta);
+        }
+      } else {
+        vector = c1.subtract(c2).normalize().multiplyScalar(delta);
+      }
+
+      this.x += vector.x;
+      this.y += vector.y;
+
+      return true;
+    }
+    return false;
+  }
+
+  _hitTestLine(line, delta) {
+    for (const edge of [this.topEdge, this.bottomEdge, this.leftEdge, this.rightEdge]) {
+      if (foundry.utils.lineSegmentIntersects(line.A, line.B, edge.A, edge.B)) {
+        let vector = line.getPerpendicularVector(this.center).normalize().multiplyScalar(delta);
+        this.x += vector.x;
+        this.y += vector.y;
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  getTokenCoord() {
+    return { x: this.x, y: this.y };
+  }
+
+  draw(graphics) {
+    graphics.drawRect(this.x, this.y, this.width, this.height);
+  }
+}
+
+class CircleShape extends PIXI.Circle {
+  constructor(token, rectangle) {
+    if (rectangle) {
+      super(rectangle.x + rectangle.width / 2, rectangle.y + rectangle.height / 2, rectangle.width / 2);
+    } else {
+      const width = token.document.width * canvas.grid.sizeX;
+      super(
+        token.document.x + width / 2,
+        token.document.y + (token.document.height * canvas.grid.sizeY) / 2,
+        width / 2
+      );
+    }
+  }
+
+  hitTestMove(shape, delta = 0.5) {
+    if (shape.isLine) {
+      return this._hitTestLine(shape, delta);
+    }
+
+    const dR = this.radius + shape.radius;
+    const d = Math.hypot(this.x - shape.x, this.y - shape.y);
+    if (d < dR) {
+      const c1 = this.center;
+      const c2 = shape.center;
+
+      let vector;
+      if (c1.x == c2.x && c1.y === c2.y) {
+        // In case of exact overlap, use _fallbackVector, which points towards original token position
+        vector = this._fallbackVector.multiplyScalar(delta);
+      } else if (this._stickyRightAngleMove) {
+        vector = this._fallbackVector.multiplyScalar(delta);
+      } else {
+        vector = this.center.subtract(shape.center).normalize();
+        let scalar = dR - d;
+        if (scalar > delta) scalar = delta;
+        vector = vector.multiplyScalar(scalar);
+      }
+
+      this.x += vector.x;
+      this.y += vector.y;
+
+      return true;
+    }
+    return false;
+  }
+
+  _hitTestLine(line, delta) {
+    const intersection = foundry.utils.lineCircleIntersection(line.A, line.B, { x: this.x, y: this.y }, this.radius);
+    if (intersection.intersections.length > 0) {
+      const vector = line.getPerpendicularVector({ x: this.x, y: this.y }).normalize().multiplyScalar(delta);
+      this.x += vector.x;
+      this.y += vector.y;
+      return true;
+    }
+    return false;
+  }
+
+  getTokenCoord() {
+    return {
+      x: this.center.x - this.radius,
+      y: this.center.y - this.radius,
+    };
+  }
+
+  draw(graphics) {
+    graphics.drawEllipse(this.center.x, this.center.y, this.radius, this.radius);
+  }
+}
 
 class Snapper {
   static _fallbackVector;
@@ -89,11 +266,7 @@ class Snapper {
     dg.lineStyle(1, 0x00ff00, 1);
 
     for (const shape of shapes) {
-      if (shape instanceof PIXI.Rectangle) {
-        dg.drawRect(shape.x, shape.y, shape.width, shape.height);
-      } else {
-        dg.drawEllipse(shape.center.x, shape.center.y, shape.radius, shape.radius);
-      }
+      shape.draw(dg);
     }
   }
 
@@ -106,7 +279,7 @@ class Snapper {
    * @param {String} options.sticky  If true right-angle moves will stick to tokens
    * @returns {Object}               x/y coordinates of the snapped rectangle
    */
-  static snap(rect, token, { shape = 'rectangle', sticky = true, debug = false } = {}) {
+  static snap(rect, token, { shape = 'rectangle', sticky = true, debug = false, wallSnap = false } = {}) {
     // Used during exact center to center overlaps
     this._fallbackVector = new PIXI.Point(token.center.x, token.center.y)
       .subtract(new PIXI.Point(rect.center.x, rect.center.y))
@@ -115,28 +288,29 @@ class Snapper {
     this._stickyRightAngleMove =
       sticky && ((Math.atan2(this._fallbackVector.y, this._fallbackVector.x) * 180) / Math.PI) % 90 === 0;
 
-    // Select primitive shapes and functions to be used for hit testing and snapping
-    let movedTokenShape, hitTestMove, tokenToShape;
-    if (shape === 'rectangle') {
-      movedTokenShape = rect.clone();
-      hitTestMove = this._hitTestMoveRectangle.bind(this);
-      tokenToShape = this._tokenToRectangle;
-    } else {
-      movedTokenShape = new PIXI.Circle(rect.x + rect.width / 2, rect.y + rect.height / 2, rect.width / 2);
-      hitTestMove = this._hitTestMoveCircle.bind(this);
-      tokenToShape = this._tokenToCircle;
-    }
+    const movedTokenShape = shape === 'rectangle' ? new RectangleShape(null, rect) : new CircleShape(null, rect);
 
     // We'll be treating each token as a primitive shape so lets transform them here to
     // not need to keep repeating it during each iteration
-    const shapes = canvas.tokens.placeables.filter((t) => t.id !== token.id && t.visible).map(tokenToShape);
+    const shapes = canvas.tokens.placeables
+      .filter((t) => t.id !== token.id && t.visible)
+      .map(function (token) {
+        return shape === 'rectangle' ? new RectangleShape(token) : new CircleShape(token);
+      });
+
+    // If enabled include walls as collideables
+    if (wallSnap) {
+      canvas.walls.placeables.forEach((wall) => {
+        if (wall.document.move !== 0) shapes.push(new LineShape(wall));
+      });
+    }
 
     const maxSteps = 5000;
     let steps = 0;
     while (steps < maxSteps) {
       let hit = false;
       for (const shape of shapes) {
-        hit = hitTestMove(movedTokenShape, shape) || hit;
+        hit = movedTokenShape.hitTestMove(shape, 1) || hit;
       }
 
       if (!hit) break;
@@ -147,89 +321,6 @@ class Snapper {
     if (debug) this._debugShapes(shapes.concat(movedTokenShape));
 
     // Get token x/y from primitive
-    if (shape === 'rectangle') {
-      return { x: movedTokenShape.x, y: movedTokenShape.y };
-    } else {
-      return {
-        x: movedTokenShape.center.x - movedTokenShape.radius,
-        y: movedTokenShape.center.y - movedTokenShape.radius,
-      };
-    }
-  }
-
-  static _tokenToRectangle(token) {
-    return new PIXI.Rectangle(
-      token.document.x,
-      token.document.y,
-      token.document.width * (canvas.grid.sizeX ?? canvas.grid.w), // v12
-      token.document.height * (canvas.grid.sizeY ?? canvas.grid.h) // v12
-    );
-  }
-
-  static _tokenToCircle(token) {
-    const width = token.document.width * canvas.grid.w;
-    return new PIXI.Circle(
-      token.document.x + width / 2,
-      token.document.y + (token.document.height * (canvas.grid.sizeY ?? canvas.grid.h)) / 2, // v12
-      width / 2
-    );
-  }
-
-  static _hitTestMoveRectangle(rect1, rect2, delta = 0.5) {
-    if (rect1.overlaps(rect2)) {
-      const c1 = new PIXI.Point(rect1.center.x, rect1.center.y);
-      const c2 = new PIXI.Point(rect2.center.x, rect2.center.y);
-
-      let vector;
-
-      if (c1.x == c2.x && c1.y === c2.y) {
-        // In case of exact overlap, use _fallbackVector, which points towards original token position
-        if (this._fallbackVector) vector = this._fallbackVector.multiplyScalar(delta);
-        else return false;
-      } else if (this._stickyRightAngleMove) {
-        const intersection = rect1.intersection(rect2);
-        if (intersection.width * intersection.height > 100) {
-          vector = this._fallbackVector.multiplyScalar(delta);
-        } else {
-          vector = c1.subtract(c2).normalize().multiplyScalar(delta);
-        }
-      } else {
-        vector = c1.subtract(c2).normalize().multiplyScalar(delta);
-      }
-
-      rect1.x += vector.x;
-      rect1.y += vector.y;
-
-      return true;
-    }
-    return false;
-  }
-
-  static _hitTestMoveCircle(circle1, circle2, delta = 1) {
-    const dR = circle1.radius + circle2.radius;
-    const d = Math.hypot(circle1.x - circle2.x, circle1.y - circle2.y);
-    if (d < dR) {
-      const c1 = circle1.center;
-      const c2 = circle2.center;
-
-      let vector;
-      if (c1.x == c2.x && c1.y === c2.y) {
-        // In case of exact overlap, use _fallbackVector, which points towards original token position
-        vector = this._fallbackVector.multiplyScalar(delta);
-      } else if (this._stickyRightAngleMove) {
-        vector = this._fallbackVector.multiplyScalar(delta);
-      } else {
-        vector = circle1.center.subtract(circle2.center).normalize();
-        let scalar = dR - d;
-        if (scalar > delta) scalar = delta;
-        vector = vector.multiplyScalar(scalar);
-      }
-
-      circle1.x += vector.x;
-      circle1.y += vector.y;
-
-      return true;
-    }
-    return false;
+    return movedTokenShape.getTokenCoord();
   }
 }

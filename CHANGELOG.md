@@ -1,5 +1,10 @@
 # 1.0.4
 
+- New Setting: `Wall Snap`
+  - When enabled tokens will also snap to walls
+
+# 1.0.4
+
 - v11 fix
 
 # 1.0.3

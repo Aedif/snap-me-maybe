@@ -12,6 +12,10 @@
       "debug": {
         "name": "Debug",
         "hint": "Show token shape outlines."
+      },
+      "wall-snap": {
+        "name": "Wall Snap",
+        "hint": "When enabled tokens will also snap to walls."
       }
     },
     "keybindings": {
