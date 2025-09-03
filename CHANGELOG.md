@@ -1,3 +1,7 @@
+# 2.0.0
+
+- v13 support
+
 # 1.0.4
 
 - New Setting: `Wall Snap`

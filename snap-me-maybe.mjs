@@ -10,6 +10,7 @@ Hooks.on('init', () => {
     config: true,
     type: String,
     default: settings.shape,
+    scope: 'world',
     choices: {
       rectangle: game.i18n.localize(`${MODULE_ID}.common.rectangle`),
       circle: game.i18n.localize(`${MODULE_ID}.common.circle`),
@@ -24,6 +25,7 @@ Hooks.on('init', () => {
     name: game.i18n.localize(`${MODULE_ID}.settings.sticky.name`),
     hint: game.i18n.localize(`${MODULE_ID}.settings.sticky.hint`),
     config: true,
+    scope: 'world',
     type: Boolean,
     default: settings.sticky,
     onChange: (val) => {
@@ -36,6 +38,7 @@ Hooks.on('init', () => {
     name: game.i18n.localize(`${MODULE_ID}.settings.wall-snap.name`),
     hint: game.i18n.localize(`${MODULE_ID}.settings.wall-snap.hint`),
     config: true,
+    scope: 'world',
     type: Boolean,
     default: settings.wallSnap,
     onChange: (val) => {
@@ -50,6 +53,7 @@ Hooks.on('init', () => {
     config: true,
     type: Boolean,
     default: settings.debug,
+    scope: 'world',
     onChange: (val) => {
       settings.debug = val;
       canvas.controls.debug.clear();
@@ -60,33 +64,43 @@ Hooks.on('init', () => {
   patchPIXI();
 });
 
-Hooks.on('preUpdateToken', (tokenDoc, change, options, userId) => {
-  if (
-    game.user.id !== userId ||
-    canvas.grid.type !== CONST.GRID_TYPES.GRIDLESS ||
-    !tokenDoc.object ||
-    !['x', 'y', 'width', 'height'].some((k) => k in change)
-  )
-    return;
+Hooks.on('libWrapper.Ready', () => {
+  libWrapper.register(
+    MODULE_ID,
+    'TokenDocument.prototype._preUpdate',
+    function (wrapped, changed, options, user) {
+      if (options.movement && !options._movementArguments) {
+        if (game.keyboard.isModifierActive(foundry.helpers.interaction.KeyboardManager.MODIFIER_KEYS.SHIFT))
+          return wrapped(changed, options, user);
 
-  if (game.keyboard.isModifierActive(KeyboardManager.MODIFIER_KEYS.SHIFT)) return;
+        const move = options.movement[changed._id];
+        const destination = move.waypoints[move.waypoints.length - 1];
 
-  let { x, y, height, width } = change;
+        const rect = new PIXI.Rectangle(
+          destination.x,
+          destination.y,
+          (changed.width ?? this.width) * canvas.grid.sizeX,
+          (changed.height ?? this.height) * canvas.grid.sizeY
+        );
 
-  // Simulate new token shape after the update
-  const rect = new PIXI.Rectangle(
-    x ?? tokenDoc.x,
-    y ?? tokenDoc.y,
-    (width ?? tokenDoc.width) * canvas.grid.sizeX,
-    (height ?? tokenDoc.height) * canvas.grid.sizeY
+        const snappedCoords = Snapper.snap(rect, this.object, settings);
+        if (
+          Number.isFinite(snappedCoords.x) &&
+          Number.isFinite(snappedCoords.y) &&
+          (snappedCoords.x !== rect.x || snappedCoords.y !== rect.y)
+        ) {
+          const collision = this.object.checkCollision(this.object.getCenterPoint(snappedCoords));
+          if (!collision) {
+            destination.x = Math.floor(snappedCoords.x);
+            destination.y = Math.floor(snappedCoords.y);
+          }
+        }
+      }
+
+      return wrapped(changed, options, user);
+    },
+    'WRAPPER'
   );
-
-  // Snap simulated shape
-  const snappedCoords = Snapper.snap(rect, tokenDoc.object, settings);
-  if (snappedCoords.x === rect.x && snappedCoords.y === rect.y) return true;
-
-  const collision = tokenDoc.object.checkCollision(tokenDoc.object.getCenterPoint(snappedCoords));
-  if (!collision) foundry.utils.mergeObject(change, { x: Math.floor(snappedCoords.x), y: Math.floor(snappedCoords.y) });
 });
 
 class LineShape {
